@@ -1,0 +1,107 @@
+    #target photoshop
+app.displayDialogs = DialogModes.NO;
+
+// ===============================
+// SELECT PARENT MODELS FOLDER
+// ===============================
+var parentFolder = Folder.selectDialog("Select parent MODELS folder");
+if (!parentFolder) exit();
+
+// ===============================
+// SELECT STICKER PSD FILES
+// ===============================
+var stickerFiles = File.openDialog(
+    "Select ALL sticker PSD files",
+    "*.psd",
+    true
+);
+if (!stickerFiles) exit();
+
+// ===============================
+// JPG SAVE OPTIONS
+// ===============================
+var jpgOptions = new JPEGSaveOptions();
+jpgOptions.embedColorProfile = true;
+jpgOptions.formatOptions = FormatOptions.STANDARDBASELINE;
+jpgOptions.matte = MatteType.NONE;
+jpgOptions.quality = 8;
+
+// ===============================
+// GET MODEL FOLDERS
+// ===============================
+var modelFolders = parentFolder.getFiles(function (f) {
+    return f instanceof Folder;
+});
+
+// ===============================
+// MAIN MODEL LOOP
+// ===============================
+for (var i = 0; i < modelFolders.length; i++) {
+
+    try {
+        // Find model PSD
+        var psdFiles = modelFolders[i].getFiles("*.psd");
+        if (psdFiles.length === 0) throw "No PSD found";
+
+        var doc = app.open(psdFiles[0]);
+        var modelName = modelFolders[i].name;
+
+        // Create export folder
+        var exportFolder = new Folder(modelFolders[i] + "/Exports");
+        if (!exportFolder.exists) exportFolder.create();
+
+        // Find STICKER smart object
+        var stickerLayer = findStickerLayer(doc);
+        if (!stickerLayer) throw "STICKER Smart Object not found";
+
+        // ===============================
+        // STICKER LOOP
+        // ===============================
+        for (var s = 0; s < stickerFiles.length; s++) {
+
+            replaceSmartObject(stickerFiles[s], stickerLayer);
+
+            var stickerName = stickerFiles[s].name.replace(/\.[^\.]+$/, "");
+            var saveFile = new File(
+                exportFolder + "/" + modelName + "_" + stickerName + ".jpg"
+            );
+
+            doc.saveAs(saveFile, jpgOptions, true, Extension.LOWERCASE);
+        }
+
+        // Close model PSD safely
+        doc.close(SaveOptions.DONOTSAVECHANGES);
+
+    } catch (err) {
+        alert("Error in model: " + modelFolders[i].name + "\n" + err);
+        if (app.documents.length)
+            app.activeDocument.close(SaveOptions.DONOTSAVECHANGES);
+        continue;
+    }
+}
+
+// ===============================
+// FIND STICKER SMART OBJECT BY NAME
+// ===============================
+function findStickerLayer(doc) {
+    for (var i = 0; i < doc.layers.length; i++) {
+        var layer = doc.layers[i];
+        if (layer.kind === LayerKind.SMARTOBJECT && layer.name === "STICKER") {
+            return layer;
+        }
+    }
+    return null;
+}
+
+// ===============================
+// REPLACE SMART OBJECT CONTENT
+// ===============================
+function replaceSmartObject(file, layer) {
+    app.activeDocument.activeLayer = layer;
+
+    var id = stringIDToTypeID("placedLayerReplaceContents");
+    var desc = new ActionDescriptor();
+    desc.putPath(charIDToTypeID("null"), new File(file));
+    desc.putInteger(charIDToTypeID("PgNm"), 1);
+    executeAction(id, desc, DialogModes.NO);
+}
